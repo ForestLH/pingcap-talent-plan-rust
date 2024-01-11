@@ -17,3 +17,5 @@ edition = "2018"
 [dependencies]
 predicates = "3.0.4"
 assert_cmd = "2.0.12"
+tempfile = "3.2.0"
+walkdir = "2.3.1"
