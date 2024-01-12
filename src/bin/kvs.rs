@@ -1,6 +1,7 @@
 use std::env;
+use kvs::Result;
 
-fn main() {
+fn main() -> Result<()> {
   let mut args:Vec<String> = env::args().collect();
   args.remove(0);
   if args.is_empty() {
@@ -45,4 +46,5 @@ fn main() {
     }
     i += 1;
   }
+  Ok(())
 }

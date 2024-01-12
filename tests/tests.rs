@@ -1,7 +1,9 @@
 use assert_cmd::prelude::*;
-use kvs::{KvStore, Result};
+use kvs::{KvStore, Result, DeferDrop};
 use predicates::ord::eq;
 use predicates::str::{contains, is_empty, PredicateStrExt};
+use std::fs::{OpenOptions, self};
+use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 use walkdir::WalkDir;
@@ -260,6 +262,15 @@ fn remove_key() -> Result<()> {
 fn compaction() -> Result<()> {
     let temp_dir = TempDir::new().expect("unable to create temporary working directory");
     let mut store = KvStore::open(temp_dir.path())?;
+    let db_file = store.get_path();
+    let a = DeferDrop::new(move || {
+        let path = Path::new(&db_file);
+        println!("remove file {:?}", path);
+        fs::remove_file(path).unwrap_or_else(|err| {
+            println!("failed remove file {:?}", err);
+            ()
+        });
+    });
 
     let dir_size = || {
         let entries = WalkDir::new(temp_dir.path()).into_iter();
@@ -298,4 +309,12 @@ fn compaction() -> Result<()> {
     }
 
     panic!("No compaction detected");
+}
+
+#[test]
+fn test_defer() {
+    let a = DeferDrop::new(|| {
+        println!("aa");
+    });
+    println!("bb");
 }
