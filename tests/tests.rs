@@ -262,7 +262,7 @@ fn remove_key() -> Result<()> {
 fn compaction() -> Result<()> {
     let temp_dir = TempDir::new().expect("unable to create temporary working directory");
     let mut store = KvStore::open(temp_dir.path())?;
-    let db_file = store.get_path();
+    let db_file = store.get_db_path();
     let a = DeferDrop::new(move || {
         let path = Path::new(&db_file);
         println!("remove file {:?}", path);

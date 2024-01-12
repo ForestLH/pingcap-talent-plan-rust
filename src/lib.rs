@@ -6,4 +6,5 @@ pub use utils::DeferDrop;
 mod kv;
 mod error;
 mod utils;
+mod entry;
 
