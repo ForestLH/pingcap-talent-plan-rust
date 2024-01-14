@@ -2,6 +2,10 @@ use assert_cmd::prelude::*;
 use kvs::{KvStore, Result, DeferDrop};
 use predicates::ord::eq;
 use predicates::str::{contains, is_empty, PredicateStrExt};
+use std::env;
+use std::fmt::format;
+use log::{debug, error, log_enabled, info, Level};
+use env_logger::Builder;
 use std::fs::{OpenOptions, self};
 use std::path::Path;
 use std::process::Command;
@@ -260,17 +264,10 @@ fn remove_key() -> Result<()> {
 // Test data correctness after compaction.
 #[test]
 fn compaction() -> Result<()> {
+    log4rs::init_file("/Users/lee/Code/RustLearn/pingcap-talent-plan/project-1/log4rs.yaml", Default::default()).unwrap();
+
     let temp_dir = TempDir::new().expect("unable to create temporary working directory");
     let mut store = KvStore::open(temp_dir.path())?;
-    let db_file = store.get_db_path();
-    let a = DeferDrop::new(move || {
-        let path = Path::new(&db_file);
-        println!("remove file {:?}", path);
-        fs::remove_file(path).unwrap_or_else(|err| {
-            println!("failed remove file {:?}", err);
-            ()
-        });
-    });
 
     let dir_size = || {
         let entries = WalkDir::new(temp_dir.path()).into_iter();
@@ -302,7 +299,17 @@ fn compaction() -> Result<()> {
         // reopen and check content.
         let mut store = KvStore::open(temp_dir.path())?;
         for key_id in 0..1000 {
+            /**for debug */
+            if iter == 211 && key_id == 0 {
+                let ac = 12;
+            }
+            /***** */
             let key = format!("key{}", key_id);
+            let db_num = store.get(key.clone())?;
+            let expect_num = Some(format!("{}", iter));
+            if db_num != expect_num {
+                let a = 12;
+            }
             assert_eq!(store.get(key)?, Some(format!("{}", iter)));
         }
         return Ok(());
@@ -317,4 +324,14 @@ fn test_defer() {
         println!("aa");
     });
     println!("bb");
+}
+
+
+#[test]
+fn test_log() { 
+    // 从 log4rs.yml 文件中加载配置
+    log4rs::init_file("/Users/lee/Code/RustLearn/pingcap-talent-plan/project-1/log4rs.yaml", Default::default()).unwrap();
+    // 记录日志
+    info!("这是一个信息级别的日志");
+    error!("这是一个错误级别的日志");
 }
