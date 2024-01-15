@@ -1,0 +1,11 @@
+refresh_rate: 30 seconds
+
+appenders:
+  file:
+    kind: file
+    path: "/Users/lee/Code/RustLearn/pingcap-talent-plan/project-1/my_log.log"
+
+root:
+  level: info
+  appenders:
+    - file
