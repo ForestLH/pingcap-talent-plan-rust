@@ -287,7 +287,6 @@ fn compaction() -> Result<()> {
             let value = format!("{}", iter);
             store.set(key, value)?;
         }
-
         let new_size = dir_size();
         if new_size > current_size {
             current_size = new_size;
@@ -299,11 +298,6 @@ fn compaction() -> Result<()> {
         // reopen and check content.
         let mut store = KvStore::open(temp_dir.path())?;
         for key_id in 0..1000 {
-            /**for debug */
-            if iter == 211 && key_id == 0 {
-                let ac = 12;
-            }
-            /***** */
             let key = format!("key{}", key_id);
             let db_num = store.get(key.clone())?;
             let expect_num = Some(format!("{}", iter));

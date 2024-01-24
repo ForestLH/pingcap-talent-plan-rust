@@ -1,12 +1,14 @@
 use crate::entry::Entry;
 use crate::error::Error;
 use crate::error::Result;
+use log::debug;
+use log::info;
 use serde::{Deserialize, Serialize};
-use tempfile::NamedTempFile;
+use tempfile::{NamedTempFile, TempPath};
 use tempfile::TempDir;
 use std::clone;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, SeekFrom};
 use std::io::Seek;
 use std::mem::size_of;
 use std::mem::swap;
@@ -17,6 +19,7 @@ use std::{
     io::Write,
     path::Path,
 };
+use std::fs::write;
 
 const DB_NAME: &str = "db.db";
 const INDEX_NAME: &str = "index.db";
@@ -31,6 +34,7 @@ pub struct KvStore {
 	back_index: HashMap<String, Entry>,
     db: File,
     path: String,
+    compact_times: u16,
 }
 
 impl KvStore {
@@ -46,6 +50,7 @@ impl KvStore {
 			back_index: HashMap::new(),
             db: db_file,
             path: path.to_string_lossy().to_string(),
+            compact_times: 0,
         }
     }
     pub fn set(&mut self, key: String, val: String) -> Result<()> {
@@ -58,13 +63,6 @@ impl KvStore {
 		}
         Ok(())
     }
-	fn append_entry(&mut self, key: String, val: String, file: &mut File) -> Result<()>{
-		file.seek(std::io::SeekFrom::End(0)).unwrap();
-		let val_bytes = val.as_bytes();
-		self.back_index.insert(key, Entry::get_entry(file, val_bytes));
-		file.write_all(val_bytes).unwrap();
-        Ok(())
-	}
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
         match self.index.get(&key) {
             None => Ok(None),
@@ -74,15 +72,6 @@ impl KvStore {
 			}
         }
     }
-	fn get_from_file(&mut self, key: String, file: &mut File) ->Result<Option<String>> {
-		match self.back_index.get(&key) {
-            None => Ok(None),
-            Some(entry) => {
-				let val = Entry::get_string(file, entry)?;
-				Ok(Some(val))
-			}
-        }
-	}
     pub fn remove(&mut self, key: String) -> Result<()> {
         if !self.index.contains_key(&key) {
             return Err(Error::KeyNotExistErr);
@@ -104,31 +93,64 @@ impl KvStore {
 	}
 	// use 
 	pub fn compact(&mut self) {
+        let binding = TempDir::new().unwrap();
+        let back_path = binding.path();
+        self.snapshot(back_path).unwrap();
+        let mut back_store = KvStore::open(back_path).unwrap();
 		let mut keys:Vec<String> = vec![];
-		for iter in self.index.iter() {
-			keys.push(iter.0.clone());
+		for (key, _) in self.index.iter() {
+			keys.push(key.clone());
 		}
-		self.back_index.clear();
-		let mut named_temp_file = NamedTempFile::new().unwrap();
-		let file = named_temp_file.as_file_mut();
-		for key in keys {
-			let val = self.get(key.clone()).unwrap().unwrap();
-			self.append_entry(key.clone(), val.clone(), file).unwrap();
-			
-			/*just for debug */
-			let val_back = self.get_from_file(key, file).unwrap().unwrap();
-			if val_back != val {
-				let debug = 12;
-				panic!()
-			}
-			/***************************** */
-		}
-
-		
-		fs::rename(named_temp_file.path(), self.get_db_path()).unwrap();
-		swap(&mut self.index, &mut self.back_index);
+        self.db.set_len(0).unwrap();
+        for key in keys {
+            let mut val = back_store.get(key.clone()).unwrap().unwrap();
+            self.set(key, val).unwrap();
+        }
 	}
+    pub fn snapshot(&mut self, path: &Path) -> Result<()> {
+        let mut index_pb = path.join(INDEX_NAME);
+        let index_path = index_pb.as_path();
+        let mut db_pb = path.join(DB_NAME);
+        let db_path = db_pb.as_path();
+        let mut db_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .read(true)
+            .open(db_path).unwrap();
+        let file_size = self.db.metadata().unwrap().len();
+        let mut index_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .read(true)
+            .open(index_path).unwrap();
+
+        let serialized = serde_json::to_string(&self.index).unwrap();
+        index_file.write_all(serialized.as_bytes()).unwrap();
+
+        let mut buffer = Vec::with_capacity(file_size as usize);
+        self.db.seek(SeekFrom::Start(0)).unwrap();
+        self.db.read_to_end(&mut buffer).unwrap();
+        db_file.write_all(&buffer).unwrap();
+        Ok(())
+    }
+    pub fn compare(&mut self, other: &mut Self) -> bool {
+        let mut keys = vec![];
+        for (key, _) in &self.index {
+            keys.push(key.clone());
+        }
+        for k in keys {
+            let val = self.get(k.clone()).unwrap().unwrap();
+            let back_val = other.get(k.clone()).unwrap().unwrap();
+            if val != back_val {
+                return false;
+            }
+        }
+        true
+    }
 }
+
 impl KvStore {
     fn load(index: &mut File, path: &Path) -> Result<KvStore> {
         let mut buf = String::new();
@@ -151,6 +173,7 @@ impl KvStore {
 				back_index: HashMap::new(),
                 db: db,
                 path: path.to_string_lossy().to_string(),
+                compact_times: 0,
             })
         }
     }
@@ -195,6 +218,8 @@ mod test {
 
     use crate::KvStore;
     use std::path::Path;
+    use serde_json::to_string;
+    use serde_json::Value::String;
 
     #[test]
     fn test_open() {
@@ -234,4 +259,21 @@ mod test {
 		let after_size = get_dir_size(p);
 		assert!(before_size > after_size);
 	}
+    #[test]
+    fn test_snapshot() {
+        let path = Path::new("/Users/lee/Code/RustLearn/pingcap-talent-plan/project-1");
+        let mut store = KvStore::new(path);
+        for i in 0..100 {
+            let iter = i.to_string();
+            store.set(iter.clone(), iter).unwrap();
+        }
+        let back_path = Path::new("/Users/lee/Code/RustLearn/pingcap-talent-plan/project-1/back");
+        store.snapshot(back_path).unwrap();
+        let mut back_store = KvStore::open(back_path).unwrap();
+        for i in 0..100 {
+            let iter = i.to_string();
+            let res = back_store.get(iter.clone()).unwrap().unwrap();
+            assert_eq!(res, iter);
+        }
+    }
 }
