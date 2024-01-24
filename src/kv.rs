@@ -20,6 +20,7 @@ use std::{
     path::Path,
 };
 use std::fs::write;
+use crate::KvsEngine;
 
 const DB_NAME: &str = "db.db";
 const INDEX_NAME: &str = "index.db";
@@ -209,6 +210,19 @@ impl Drop for KvStore {
             .open(self.get_index_path())
             .unwrap();
         file.write_all(serialized.as_bytes()).unwrap();
+    }
+}
+impl KvsEngine for KvStore {
+    fn get(&mut self, key: String) -> String {
+        todo!()
+    }
+
+    fn set(&mut self, key: String, val: String) {
+        todo!()
+    }
+
+    fn remove(&mut self, key: String) {
+        todo!()
     }
 }
 
